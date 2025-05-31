@@ -10,7 +10,7 @@ defmodule Ectyl.Contacts do
 
   @contacts_fields Contact.__schema__(:fields)
   @directions [:asc, :desc]
-  @operators [:like, :in, :not_in]
+  @operators [:like, :in, :not_in, :begins_with, :ends_with]
 
   @doc """
   Returns the list of contacts.
@@ -20,6 +20,12 @@ defmodule Ectyl.Contacts do
       iex> Ectyl.Contacts.list_contacts()
       [%Contact{}, ...]
 
+  ## Options
+  - `:filters` - A list of filters to apply to the query. Each filter can be a tuple of `{field, value}` or `{field, value, operator}`.
+    Supported operators are `:like`, `:in`, `:not_in`, `:begins_with`, and `:ends_with`. Supported fields are those defined in `Contact.__schema__(:fields)`
+  - `:sort` - A list of tuples for sorting, where each tuple is `{field, direction}`. Supported fields are those defined in `Contact.__schema__(:fields)` and directions are `:asc` or `:desc`.
+  - `:page` - The page number for pagination (default is 1).
+  - `:page_size` - The number of contacts per page (default is 10).
   """
   def list_contacts(opts \\ []) do
     contacts_base_query()
@@ -40,12 +46,22 @@ defmodule Ectyl.Contacts do
     |> Enum.reduce(query, fn
       {field, value}, acc ->
         from c in acc, where: field(c, ^field) == ^value
+
+      {field, value, :begins_with}, acc ->
+        from c in acc, where: like(field(c, ^field), ^"#{value}%")
+
+      {field, value, :ends_with}, acc ->
+        from c in acc, where: like(field(c, ^field), ^"%#{value}")
+
       {field, value, :like}, acc ->
         from c in acc, where: like(field(c, ^field), ^"%#{value}%")
+
       {field, value, :in}, acc ->
         from c in acc, where: field(c, ^field) in ^value
+
       {field, value, :not_in}, acc ->
         from c in acc, where: field(c, ^field) not in ^value
+
       _, acc ->
         acc
     end)
@@ -54,7 +70,9 @@ defmodule Ectyl.Contacts do
   defp apply_sorting(query, opts) do
     opts
     |> options(:sort)
-    |> Enum.filter(fn {field, direction} -> field in @contacts_fields and direction in @directions end)
+    |> Enum.filter(fn {field, direction} ->
+      field in @contacts_fields and direction in @directions
+    end)
     |> Enum.reduce(query, fn {field, direction}, acc ->
       from c in acc, order_by: [{^direction, field(c, ^field)}]
     end)
@@ -70,7 +88,7 @@ defmodule Ectyl.Contacts do
   end
 
   defp contacts_base_query do
-    from c in Contact
+    from(c in Contact)
   end
 
   defp options(opts, option_type) do
